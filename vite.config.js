@@ -7,7 +7,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 // Dynamically target local vs production backend
 const BACKEND_URL = process.env.NODE_ENV === 'production' 
   ? 'https://pos-backend-8ymy.onrender.com' 
-  : 'http://192.168.29.106:5000';
+  : 'https://pos-backend-8ymy.onrender.com';
 
 export default defineConfig({
   plugins: [
