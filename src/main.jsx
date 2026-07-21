@@ -10,9 +10,25 @@ import './index.css';
 
 console.log('🚀 main.jsx: Application starting...');
 
-// Global error handler to catch any uncaught exceptions
+// Catch MIME type/chunk load failures and force a fresh reload
 window.addEventListener('error', (event) => {
   console.error('💥 Global error caught:', event.error || event.message);
+  
+  const isChunkError = 
+    event.message?.includes('Failed to load module script') ||
+    event.message?.includes('Loading chunk');
+
+  if (isChunkError) {
+    console.warn('🔄 Outdated assets detected. Reloading to fetch latest build...');
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (let reg of registrations) reg.unregister();
+        window.location.reload();
+      });
+    } else {
+      window.location.reload();
+    }
+  }
 });
 
 window.addEventListener('unhandledrejection', (event) => {
@@ -23,7 +39,7 @@ ensureStoragePersistence()
   .then(() => console.log('✅ Storage persistence ensured'))
   .catch(err => console.error('❌ Storage persistence failed:', err));
 
-// Warm-up AI – we'll log if it fails
+// Warm-up AI – log if it fails
 generateProductEmbedding('warmup')
   .then(() => console.log('✅ AI warmup embedding generated'))
   .catch(err => console.error('❌ AI warmup failed (ignored):', err));
@@ -36,5 +52,6 @@ root.render(
   </Provider>
 );
 
+// Register the updated Service Worker
 registerSW();
 console.log('🚀 main.jsx: Registration complete.');
