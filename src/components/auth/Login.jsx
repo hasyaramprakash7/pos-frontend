@@ -9,7 +9,7 @@ export default function Login() {
   const [role, setRole] = useState('shop');
   const [pattern, setPattern] = useState(null);
   const [password, setPassword] = useState('');
-  const [method, setMethod] = useState('otp'); // 'otp' | 'pattern' | 'password'
+  const [method, setMethod] = useState('otp');
   const [showPatternInput, setShowPatternInput] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -46,7 +46,13 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <form onSubmit={handleSubmit} className="bg-[#0c0c0e] border border-[#2ecc71]/30 p-8 rounded-2xl w-full max-w-sm">
+      <form onSubmit={handleSubmit} className="bg-[#0c0c0e] border border-[#2ecc71]/30 p-8 rounded-2xl w-full max-w-sm relative overflow-hidden">
+        {/* Loading bar at the top */}
+        {loading && (
+          <div className="absolute top-0 left-0 w-full h-1 bg-[#2ecc71]/20">
+            <div className="h-full bg-[#2ecc71] animate-pulse w-full transition-all duration-300" />
+          </div>
+        )}
         <h1 className="text-[#2ecc71] text-2xl font-bold text-center mb-6">POS Login</h1>
         {error && <p className="text-red-400 text-xs mb-2">{error}</p>}
 
