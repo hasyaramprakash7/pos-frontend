@@ -10,6 +10,7 @@ const BACKEND_URL = process.env.NODE_ENV === 'production'
   : 'https://pos-backend-8ymy.onrender.com';
 
 export default defineConfig({
+  base: '/', // Ensures asset paths resolve cleanly from root
   plugins: [
     react(),
     tailwindcss(),
@@ -49,32 +50,24 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    rolldownOptions: {
-      onLog(level, log, defaultHandler) {
-        if (log.code === 'EVAL' && log.message?.includes('onnxruntime-web')) {
+    rollupOptions: {
+      onwarn(warning, defaultHandler) {
+        if (warning.code === 'EVAL' && warning.id?.includes('onnxruntime-web')) {
           return;
         }
-        defaultHandler(level, log);
+        defaultHandler(warning);
       },
       output: {
-        codeSplitting: {
-          groups: [
-            {
-              name: 'transformers-ort',
-              test: /node_modules[\\/](@xenova|onnxruntime-web)/,
-              priority: 20,
-            },
-            {
-              name: 'html2canvas',
-              test: /node_modules[\\/]html2canvas/,
-              priority: 15,
-            },
-            {
-              name: 'vendor',
-              test: /node_modules/,
-              priority: 10,
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@xenova') || id.includes('onnxruntime-web')) {
+              return 'transformers-ort';
             }
-          ]
+            if (id.includes('html2canvas')) {
+              return 'html2canvas';
+            }
+            return 'vendor';
+          }
         }
       }
     }
