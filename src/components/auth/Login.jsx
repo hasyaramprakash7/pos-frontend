@@ -52,19 +52,18 @@ export default function Login() {
 
         {/* Method toggle */}
         <div className="flex mb-4 space-x-2">
-          
-          <button type="button" onClick={() => setMethod('pattern')}
-            className={`flex-1 py-2 rounded text-sm font-medium ${
-              method === 'pattern' ? 'bg-[#0d4f2b] text-[#2ecc71] border border-[#2ecc71]' : 'bg-[#111] text-[#aaa] border border-[#222]'
-            }`}>Pattern</button>
-          {/* <button type="button" onClick={() => setMethod('password')}
-            className={`flex-1 py-2 rounded text-sm font-medium ${
-              method === 'password' ? 'bg-[#0d4f2b] text-[#2ecc71] border border-[#2ecc71]' : 'bg-[#111] text-[#aaa] border border-[#222]'
-            }`}>Password</button> */}
           <button type="button" onClick={() => setMethod('otp')}
             className={`flex-1 py-2 rounded text-sm font-medium ${
               method === 'otp' ? 'bg-[#0d4f2b] text-[#2ecc71] border border-[#2ecc71]' : 'bg-[#111] text-[#aaa] border border-[#222]'
             }`}>OTP</button>
+          <button type="button" onClick={() => setMethod('pattern')}
+            className={`flex-1 py-2 rounded text-sm font-medium ${
+              method === 'pattern' ? 'bg-[#0d4f2b] text-[#2ecc71] border border-[#2ecc71]' : 'bg-[#111] text-[#aaa] border border-[#222]'
+            }`}>Pattern</button>
+          <button type="button" onClick={() => setMethod('password')}
+            className={`flex-1 py-2 rounded text-sm font-medium ${
+              method === 'password' ? 'bg-[#0d4f2b] text-[#2ecc71] border border-[#2ecc71]' : 'bg-[#111] text-[#aaa] border border-[#222]'
+            }`}>Password</button>
         </div>
 
         <div className="mb-4">
@@ -101,14 +100,14 @@ export default function Login() {
           </div>
         )}
 
-        {/* {method === 'password' && (
+        {method === 'password' && (
           <div className="mb-6">
             <label className="block text-xs text-[#aaa] mb-1">Password</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password" required
               className="w-full p-3 bg-[#111] border border-[#222] rounded-lg text-white outline-none focus:border-[#2ecc71]" />
           </div>
-        )} */}
+        )}
 
         {showPatternInput && (
           <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
