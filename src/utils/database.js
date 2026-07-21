@@ -7,8 +7,9 @@ const generateBarcode = (name) => {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 };
 
-db.version(8).stores({
-  products: '++id, name, price, barcode, categoryType, unitType, stock, image, synced',
+// Version 10 – added _serverId field (MongoDB ObjectId)
+db.version(10).stores({
+  products: '++id, name, price, barcode, categoryType, unitType, stock, image, synced, dealer, _serverId',
   orders: '++id, timestamp, total',
   orderItems: '++id, orderId, productId',
   settings: 'id',
@@ -21,6 +22,8 @@ db.version(8).stores({
     if (product.stock === undefined) product.stock = 0;
     if (product.image === undefined) product.image = '';
     if (product.synced === undefined) product.synced = 0;
+    if (product.dealer === undefined) product.dealer = null;
+    if (product._serverId === undefined) product._serverId = null;  // new
   });
 });
 

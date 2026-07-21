@@ -24,7 +24,11 @@ export default function Checkout({ onClose }) {
   const handlePlaceOrder = async () => {
     const timestamp = Date.now();
     const generatedId = `INV-${timestamp.toString().slice(-6)}`;
-    await dispatch(placeOrder({ id: generatedId, items: cartItems, total, timestamp }));
+    const orderData = { id: generatedId, items: cartItems, total, timestamp };
+    console.log('🚀 [Checkout] Dispatching order with items:', orderData.items.length);
+    console.log('🚀 [Checkout] Order items:', orderData.items.map(i => i.name));
+    await dispatch(placeOrder(orderData));
+
     setLastAssignedOrderId(generatedId);
     setOrderProcessed(true);
   };

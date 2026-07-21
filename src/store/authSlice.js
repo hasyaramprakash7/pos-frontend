@@ -26,18 +26,47 @@ export const updateProfile = createAsyncThunk('auth/updateProfile', async (updat
   return data.user;
 });
 
-// NEW: assign a dealer to the current shop
 export const assignDealer = createAsyncThunk('auth/assignDealer', async (dealerPhone, { rejectWithValue }) => {
   try {
-    // Step 1: find dealer ID by phone
     const { data: findData } = await api.get(`/auth/find-dealer?phone=${dealerPhone}`);
     if (!findData.dealerId) throw new Error('Dealer not found');
-    // Step 2: assign that dealer to the logged‑in shop
     const { data: assignData } = await api.put('/auth/assign-dealer', { dealerId: findData.dealerId });
     localStorage.setItem('user', JSON.stringify(assignData.user));
     return assignData.user;
   } catch (err) {
     return rejectWithValue(err.response?.data?.message || err.message);
+  }
+});
+
+export const loginWithPassword = createAsyncThunk('auth/loginWithPassword', async ({ phone, password, latitude, longitude }, { rejectWithValue }) => {
+  try {
+    const { data } = await api.post('/auth/login-password', { phone, password, latitude, longitude });
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    return data;
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.message || 'Invalid credentials');
+  }
+});
+
+export const setPassword = createAsyncThunk('auth/setPassword', async (password, { rejectWithValue }) => {
+  try {
+    await api.put('/auth/set-password', { password });
+    return password;
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.message || 'Failed to set password');
+  }
+});
+
+// NEW: Signup thunk
+export const signup = createAsyncThunk('auth/signup', async ({ phone, password, name, role }, { rejectWithValue }) => {
+  try {
+    const { data } = await api.post('/auth/signup', { phone, password, name, role });
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    return data;
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.message || 'Signup failed');
   }
 });
 
@@ -80,6 +109,30 @@ const authSlice = createSlice({
         state.user = action.payload;
       })
       .addCase(assignDealer.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      .addCase(loginWithPassword.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(loginWithPassword.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload.user;
+        state.token = action.payload.token;
+      })
+      .addCase(loginWithPassword.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      .addCase(setPassword.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(setPassword.fulfilled, (state) => { state.loading = false; })
+      .addCase(setPassword.rejected, (state, action) => { state.loading = false; state.error = action.payload; })
+      // Signup cases
+      .addCase(signup.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(signup.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload.user;
+        state.token = action.payload.token;
+      })
+      .addCase(signup.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });

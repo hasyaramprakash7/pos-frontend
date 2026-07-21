@@ -54,11 +54,34 @@ export const syncLocalToBackend = async () => {
     }));
 
     log(`🚀 Sending ${payload.length} product(s) to server...`);
-    await api.post('/products/sync', { products: payload });
+    const response = await api.post('/products/sync', { products: payload });
+    const syncedProducts = response.data;
     log('✅ Server confirmed sync');
 
+    // Update local products with server _id and dealer
+    for (const serverProd of syncedProducts) {
+      let localProd = null;
+      if (serverProd.barcode) {
+        localProd = await db.products.where('barcode').equals(serverProd.barcode).first();
+      }
+      if (!localProd) {
+        localProd = await db.products.where('name').equals(serverProd.name).first();
+      }
+      if (localProd) {
+        await db.products.update(localProd.id, {
+          synced: 1,
+          dealer: serverProd.dealer,
+          _serverId: serverProd._id,   // store MongoDB ObjectId
+        });
+      }
+    }
+
+    // Fallback: mark remaining unsynced as synced
     for (const p of unsynced) {
-      await db.products.update(p.id, { synced: 1 });
+      const updated = await db.products.get(p.id);
+      if (updated && updated.synced === 0) {
+        await db.products.update(p.id, { synced: 1 });
+      }
     }
     log(`📌 Marked ${unsynced.length} product(s) as synced locally`);
   } catch (err) {
@@ -84,11 +107,9 @@ export const pullProductsFromBackend = async () => {
 
     log(`📦 Received ${serverProducts.length} product(s) from server`);
 
-    // Get list of deleted barcodes (safety net)
     const deletedItems = await db.deletedProducts.toArray();
     const deletedBarcodes = new Set(deletedItems.map(d => d.barcode).filter(Boolean));
 
-    // Build a set of barcodes (or names) that the server knows about
     const serverBarcodes = new Set();
     const serverNames = new Set();
     serverProducts.forEach(sp => {
@@ -99,9 +120,7 @@ export const pullProductsFromBackend = async () => {
     let addedCount = 0, updatedCount = 0, skippedCount = 0, prunedCount = 0;
 
     await db.transaction('rw', db.products, db.deletedProducts, async () => {
-      // ---- Pull (add/update) ----
       for (const sp of serverProducts) {
-        // Skip if barcode is in the local delete list
         if (sp.barcode && deletedBarcodes.has(sp.barcode)) {
           skippedCount++;
           continue;
@@ -126,6 +145,8 @@ export const pullProductsFromBackend = async () => {
             description: sp.description,
             synced: 1,
             barcode: sp.barcode || '',
+            dealer: sp.dealer,
+            _serverId: sp._id,          // store server ID
           });
           updatedCount++;
         } else {
@@ -140,25 +161,19 @@ export const pullProductsFromBackend = async () => {
             description: sp.description,
             synced: 1,
             embedding: null,
+            dealer: sp.dealer,
+            _serverId: sp._id,          // store server ID
           });
           addedCount++;
         }
       }
 
-      // ---- Prune local products that are no longer on the server ----
-      // (Only remove synced products that are missing; unsynced ones are kept.)
+      // Prune local synced products not on server
       const allLocal = await db.products.toArray();
       for (const localProd of allLocal) {
-        // Keep if it's not synced (still needs to be uploaded)
         if (localProd.synced !== 1) continue;
-
-        // Keep if it has a barcode and that barcode is in the server list
         if (localProd.barcode && serverBarcodes.has(localProd.barcode)) continue;
-
-        // Keep if its name matches a server product (for barcode-less items)
         if (!localProd.barcode && serverNames.has((localProd.name || '').toLowerCase())) continue;
-
-        // If we get here, the product is synced but missing from the server → delete it locally
         await db.products.delete(localProd.id);
         prunedCount++;
         log(`🧹 Pruned ${localProd.name} (no longer on server)`);

@@ -16,7 +16,8 @@ export default function ScannerPOS({ mini = false, onScanSuccess = null }) {
   const activeScanning = useRef(true);
   const streamRef = useRef(null);
   const lastScanTime = useRef(0);
-  const processingRef = useRef(false);   // prevent overlapping async calls
+  const processingRef = useRef(false);
+  const autoStartAttempted = useRef(false);   // avoid multiple auto‑start attempts
 
   const stopExistingStream = () => {
     if (streamRef.current) {
@@ -64,6 +65,18 @@ export default function ScannerPOS({ mini = false, onScanSuccess = null }) {
     }
   };
 
+  // Auto‑start camera when component mounts
+  useEffect(() => {
+    if (!autoStartAttempted.current) {
+      autoStartAttempted.current = true;
+      startCamera();
+    }
+    return () => {
+      stopExistingStream();
+      autoStartAttempted.current = false;   // reset if component remounts (e.g., hot reload)
+    };
+  }, []);
+
   useEffect(() => {
     if (cameraStarted && streamRef.current && videoRef.current) {
       const video = videoRef.current;
@@ -88,7 +101,7 @@ export default function ScannerPOS({ mini = false, onScanSuccess = null }) {
           try {
             const barcodes = await detector.detect(videoRef.current);
             if (barcodes.length > 0) {
-              processingRef.current = true;  // block new detections
+              processingRef.current = true;
               await handleCodeDetected(barcodes[0].rawValue);
               processingRef.current = false;
             }
@@ -118,13 +131,8 @@ export default function ScannerPOS({ mini = false, onScanSuccess = null }) {
     }
   };
 
-  useEffect(() => {
-    return () => stopExistingStream();
-  }, []);
-
   const handleCodeDetected = async (code) => {
     const now = Date.now();
-    // 2‑second cooldown – same barcode won't be processed twice within 2s
     if (now - lastScanTime.current < 2000) return;
     lastScanTime.current = now;
 

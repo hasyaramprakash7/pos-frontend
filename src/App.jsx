@@ -8,6 +8,10 @@ import ProductList from './components/ProductList';
 import ProductForm from './components/ProductForm';
 import ErrorBoundary from './components/ErrorBoundary';
 import Login from './components/auth/Login';
+import Signup from './components/auth/Signup';
+import SetPassword from './components/auth/SetPassword';
+import LowStockAlerts from './components/LowStockAlerts';
+
 import OTPVerify from './components/auth/OTPVerify';
 import DealerDashboard from './components/dealer/DealerDashboard';
 import { loadProducts } from './store/productsSlice';
@@ -23,7 +27,6 @@ import {
   FaSave,
   FaStore,
   FaCreditCard,
-  FaExclamationTriangle,
   FaPhone,
   FaLink,
 } from 'react-icons/fa';
@@ -41,12 +44,11 @@ function MainApp() {
   const { activeView, upiId, shopName, whatsappPhone, theme } = useSelector(
     s => s.settings
   );
-  const { isProductFormOpen, lowStockProducts } = useSelector(s => s.products);
+  const { isProductFormOpen } = useSelector(s => s.products);
   const orders = useSelector(s => s.orders.list || []);
   const user = useSelector(s => s.auth.user);
   const token = useSelector(s => s.auth.token);
 
-  // 👇 Added to access all product data (for image lookup)
   const products = useSelector(s => s.products.items);
 
   const [localShopName, setLocalShopName] = useState('');
@@ -55,12 +57,10 @@ function MainApp() {
   const [saveStatus, setSaveStatus] = useState('');
   const [exportDate, setExportDate] = useState(() => new Date().toISOString().split('T')[0]);
 
-  // Dealer assignment (only used as fallback for legacy shops)
   const [dealerPhoneInput, setDealerPhoneInput] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [showDealerAssign, setShowDealerAssign] = useState(false);
 
-  // Initial data load + sync/pull for shop users with a dealer
   useEffect(() => {
     dispatch(loadSettings());
     dispatch(loadProducts());
@@ -104,7 +104,6 @@ function MainApp() {
     setTimeout(() => setSaveStatus(''), 3000);
   };
 
-  // ---- Enhanced daily orders export with product images ----
   const handleExportDateOrders = async () => {
     try {
       const filteredOrders = await getOrdersByDateRange(exportDate, exportDate);
@@ -121,8 +120,6 @@ function MainApp() {
             order.items.forEach(item => {
               const lineTotal = ((item.price || 0) * (item.quantity || 1)).toFixed(2);
               report += `${item.name} x${item.quantity}  =  ₹${lineTotal}\n`;
-
-              // Look up the product image from the current inventory
               const product = products.find(p => p.id === item.productId);
               if (product?.image) {
                 report += `  🖼️ ${product.image}\n`;
@@ -244,7 +241,6 @@ function MainApp() {
             <p className="text-xs text-[#555] mb-6 font-mono">
               Configure processing loops and hardware destinations
             </p>
-
             <form onSubmit={handleUpdateSettings} className="space-y-4 bg-[#0a0a0a] border border-[#111] p-6 rounded-xl mb-6">
               <div>
                 <label className="text-xs text-[#aaa] uppercase tracking-wider font-mono block mb-2 flex items-center gap-2">
@@ -261,7 +257,7 @@ function MainApp() {
               </div>
               <div>
                 <label className="text-xs text-[#aaa] uppercase tracking-wider font-mono block mb-2 flex items-center gap-2">
-                  <FaCreditCard className="text-[#2ecc71]" /> Direct UPI Address VPA (Required for Payments)
+                  <FaCreditCard className="text-[#2ecc71]" /> Direct UPI Address VPA
                 </label>
                 <input
                   type="text"
@@ -271,11 +267,10 @@ function MainApp() {
                   required
                   className="w-full p-2.5 bg-[#141414] border border-[#222] focus:border-[#2ecc71] rounded-lg text-white outline-none font-mono text-sm transition-all"
                 />
-                <p className="text-[10px] text-[#555] mt-1 font-mono">Interoperable instant banking clearing gateway vector</p>
               </div>
               <div>
                 <label className="text-xs text-[#aaa] uppercase tracking-wider font-mono block mb-2 flex items-center gap-2">
-                  <FaPhone className="text-[#2ecc71]" /> WhatsApp Phone Number (for reports)
+                  <FaPhone className="text-[#2ecc71]" /> WhatsApp Phone Number
                 </label>
                 <input
                   type="text"
@@ -292,8 +287,6 @@ function MainApp() {
                 <FaSave /> Commit Changes to Device Store
               </button>
             </form>
-
-            {/* Dealer status – shows only if dealer is set */}
             {user?.role === 'shop' && user?.dealer && (
               <div className="bg-[#0a0a0a] border border-[#111] p-6 rounded-xl mb-6">
                 <p className="text-xs text-[#2ecc71] font-mono">
@@ -301,8 +294,6 @@ function MainApp() {
                 </p>
               </div>
             )}
-
-            {/* Manual dealer assignment – shows only if shop has no dealer (fallback for legacy shops) */}
             {showDealerAssign && (
               <div className="bg-[#0a0a0a] border border-[#111] p-6 rounded-xl">
                 <h3 className="text-[#2ecc71] text-lg font-bold mb-2 tracking-wide uppercase font-mono flex items-center gap-2">
@@ -329,7 +320,6 @@ function MainApp() {
                 </div>
               </div>
             )}
-
             {saveStatus && (
               <div className="mt-4 p-3 bg-[#0d2b1a] border border-[#2ecc71] text-[#2ecc71] text-xs font-mono rounded-lg">
                 {saveStatus}
@@ -343,6 +333,8 @@ function MainApp() {
             <DealerDashboard />
           </ProtectedRoute>
         );
+      case 'low_stock_alerts':
+        return <LowStockAlerts />;
       default:
         return <BillingInterface />;
     }
@@ -353,17 +345,7 @@ function MainApp() {
       <div className="flex h-screen w-screen bg-[#050505] text-[#d0d0d0] font-sans overflow-hidden">
         <Sidebar />
         <div className="flex-1 overflow-hidden relative h-full">
-          {lowStockProducts && lowStockProducts.length > 0 && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a1a] border border-amber-500/60 text-amber-400 px-4 py-2 rounded-xl text-xs font-mono flex items-center gap-2 shadow-lg max-w-[90%] truncate">
-              <FaExclamationTriangle className="shrink-0" />
-              <span>
-                Low stock:{' '}
-                {lowStockProducts
-                  .map(p => `${p.name} (${p.stock} left)`)
-                  .join(', ')}
-              </span>
-            </div>
-          )}
+          {/* ❌ Removed the top banner */}
           {renderView()}
           {isProductFormOpen && <ProductForm />}
         </div>
@@ -377,6 +359,8 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/set-password" element={<SetPassword />} />
         <Route path="/verify-otp" element={<OTPVerify />} />
         <Route
           path="/*"

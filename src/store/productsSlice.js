@@ -4,7 +4,6 @@ import { generateProductEmbedding } from '../utils/search';
 import api from '../api/axios';
 import { syncLocalToBackend } from '../services/syncService';
 
-// Helper to generate a unique barcode if none is provided
 const generateUniqueBarcode = (name) => {
   const prefix = name ? name.substring(0, 3).toUpperCase() : 'PRD';
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
@@ -14,13 +13,16 @@ export const loadProducts = createAsyncThunk('products/load', async () => {
   return await db.products.toArray();
 });
 
-export const addProduct = createAsyncThunk('products/add', async (product, { rejectWithValue }) => {
+export const addProduct = createAsyncThunk('products/add', async (product, { getState, rejectWithValue }) => {
   try {
+    const state = getState();
+    const dealer = state.auth.user?.dealer || null;
+
     const finalBarcode = product.barcode && product.barcode.trim() !== ''
       ? product.barcode.trim()
       : generateUniqueBarcode(product.name);
 
-    const finalProduct = { ...product, barcode: finalBarcode, synced: 0 };
+    const finalProduct = { ...product, barcode: finalBarcode, synced: 0, dealer };
 
     let embedding = null;
     try {
@@ -30,8 +32,6 @@ export const addProduct = createAsyncThunk('products/add', async (product, { rej
     }
 
     const id = await db.products.add({ ...finalProduct, embedding });
-
-    // Auto‑sync after adding
     syncLocalToBackend().catch(err => console.error('Auto‑sync failed:', err));
 
     return { ...finalProduct, id, embedding };
@@ -40,11 +40,16 @@ export const addProduct = createAsyncThunk('products/add', async (product, { rej
   }
 });
 
-export const updateProduct = createAsyncThunk('products/update', async (product) => {
-  // 1. Update local Dexie
+export const updateProduct = createAsyncThunk('products/update', async (product, { getState }) => {
+  const state = getState();
+  const currentUser = state.auth.user;
+  const dealer = currentUser?.dealer;
+  const isDealer = currentUser?.role === 'dealer';
+
+  const isOwn = (product.dealer && product.dealer === dealer) || !product.dealer;
+
   await db.products.put(product);
 
-  // 2. If online and product has a barcode, sync the stock to the server
   if (navigator.onLine && product.barcode && product.stock !== undefined) {
     try {
       await api.post('/inventory/update-by-barcode', {
@@ -55,8 +60,26 @@ export const updateProduct = createAsyncThunk('products/update', async (product)
     } catch (err) {
       console.error('❌ Server stock update failed:', err);
     }
-  } else {
-    console.warn('⚠️ Stock update skipped – offline or no barcode');
+  }
+
+  if (navigator.onLine && (isDealer || isOwn) && product.name) {
+    const serverId = product._serverId || product._id;
+    if (serverId && serverId.toString().length === 24) {
+      try {
+        const updatedFields = {
+          name: product.name,
+          price: product.price,
+          category: product.categoryType,
+          unit: product.unitType,
+          description: product.description,
+          imageUrl: product.image || '',
+        };
+        await api.put(`/products/${serverId}`, updatedFields);
+        console.log(`✅ Metadata synced for ${product.name}`);
+      } catch (err) {
+        console.error('❌ Metadata sync failed:', err);
+      }
+    }
   }
 
   return product;
@@ -66,14 +89,10 @@ export const deleteProductAndVector = createAsyncThunk(
   'products/deletePermanent',
   async (id, { rejectWithValue }) => {
     try {
-      if (id === undefined || id === null) {
-        throw new Error('Invalid product ID');
-      }
-
+      if (id === undefined || id === null) throw new Error('Invalid product ID');
       const product = await db.products.get(id);
       const barcode = product?.barcode;
 
-      // Delete from server (POST /inventory/delete)
       if (navigator.onLine && barcode && barcode.trim() !== '') {
         try {
           await api.post('/inventory/delete', { barcode: barcode.trim() });
@@ -85,7 +104,6 @@ export const deleteProductAndVector = createAsyncThunk(
         console.warn('⚠️ Cannot delete from server – no barcode');
       }
 
-      // Save barcode to local deleted list (safety net)
       if (barcode && barcode.trim() !== '') {
         await db.deletedProducts.put({ barcode: barcode.trim() });
         console.log(`📝 Barcode ${barcode} added to deleted list`);
@@ -100,6 +118,10 @@ export const deleteProductAndVector = createAsyncThunk(
     }
   }
 );
+
+// Helper function to compute low stock list
+const computeLowStock = (items) =>
+  items.filter(p => p.stock !== undefined && p.stock <= 5);
 
 const productsSlice = createSlice({
   name: 'products',
@@ -125,68 +147,57 @@ const productsSlice = createSlice({
     },
     updateStockFromSocket(state, action) {
       const { productId, stock } = action.payload;
-      const product = state.items.find(p => p.id === Number(productId));
-      if (product) {
-        product.stock = stock;
-      }
-      const lowThreshold = 5;
-      state.lowStockProducts = state.items.filter(p => p.stock !== undefined && p.stock <= lowThreshold);
+      // ✅ Compare as strings to handle number vs string
+      const product = state.items.find(p => String(p.id) === String(productId));
+      if (product) product.stock = stock;
+      state.lowStockProducts = computeLowStock(state.items);
     },
     updateProductStock(state, action) {
       const { productId, stock } = action.payload;
-      const product = state.items.find(p => p.id === productId);
-      if (product) {
-        product.stock = stock;
-      }
-      const lowThreshold = 5;
-      state.lowStockProducts = state.items.filter(p => p.stock !== undefined && p.stock <= lowThreshold);
+      // ✅ Critical fix: use string comparison
+      const product = state.items.find(p => String(p.id) === String(productId));
+      if (product) product.stock = stock;
+      state.lowStockProducts = computeLowStock(state.items);
     },
     setProducts(state, action) {
       state.items = action.payload;
+      state.lowStockProducts = computeLowStock(state.items);
     }
   },
   extraReducers: builder => {
     builder
-      .addCase(loadProducts.pending, (state) => { state.status = 'loading'; })
-      .addCase(loadProducts.fulfilled, (state, action) => {
-        state.status = 'succeeded';
-        state.items = action.payload;
+      .addCase(loadProducts.pending, (s) => { s.status = 'loading'; })
+      .addCase(loadProducts.fulfilled, (s, a) => {
+        s.status = 'succeeded';
+        s.items = a.payload;
+        s.lowStockProducts = computeLowStock(a.payload);
       })
-      .addCase(loadProducts.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.error.message;
+      .addCase(loadProducts.rejected, (s, a) => { s.status = 'failed'; s.error = a.error.message; })
+      .addCase(addProduct.pending, (s) => { s.status = 'loading'; })
+      .addCase(addProduct.fulfilled, (s, a) => {
+        s.status = 'succeeded';
+        s.items.push(a.payload);
+        s.lowStockProducts = computeLowStock(s.items);
       })
-      .addCase(addProduct.pending, (state) => { state.status = 'loading'; })
-      .addCase(addProduct.fulfilled, (state, action) => {
-        state.status = 'succeeded';
-        state.items.push(action.payload);
+      .addCase(addProduct.rejected, (s, a) => { s.status = 'failed'; console.error(a.payload); })
+      .addCase(updateProduct.fulfilled, (s, a) => {
+        const idx = s.items.findIndex(p => p.id === a.payload.id);
+        if (idx !== -1) s.items[idx] = a.payload;
+        s.lowStockProducts = computeLowStock(s.items);
       })
-      .addCase(addProduct.rejected, (state, action) => {
-        state.status = 'failed';
-        console.error('Product save failed:', action.payload);
+      .addCase(deleteProductAndVector.fulfilled, (s, a) => {
+        s.items = s.items.filter(p => p.id !== a.payload);
+        s.lowStockProducts = computeLowStock(s.items);
       })
-      .addCase(updateProduct.fulfilled, (state, action) => {
-        const idx = state.items.findIndex(p => p.id === action.payload.id);
-        if (idx !== -1) state.items[idx] = action.payload;
-      })
-      .addCase(deleteProductAndVector.fulfilled, (state, action) => {
-        state.items = state.items.filter(p => p.id !== action.payload);
-        console.log(`✅ Product ${action.payload} removed from list`);
-      })
-      .addCase(deleteProductAndVector.rejected, (state, action) => {
-        alert(`Delete failed: ${action.payload || 'Unknown error'}`);
-        console.error('Delete rejected:', action.payload);
+      .addCase(deleteProductAndVector.rejected, (s, a) => {
+        alert(`Delete failed: ${a.payload || 'Unknown error'}`);
       });
   }
 });
 
-export const { 
-  openProductForm, 
-  closeProductForm, 
-  setLowStockProducts, 
-  updateStockFromSocket,
-  updateProductStock,
-  setProducts
+export const {
+  openProductForm, closeProductForm, setLowStockProducts,
+  updateStockFromSocket, updateProductStock, setProducts
 } = productsSlice.actions;
 
 export default productsSlice.reducer;

@@ -8,7 +8,7 @@ import { clearCart } from '../store/cartSlice';
 import { db } from '../utils/database';
 import {
   FaShoppingCart, FaBarcode, FaSearch, FaBox, FaHistory,
-  FaCog, FaChartBar, FaSignOutAlt, FaSun, FaMoon
+  FaCog, FaChartBar, FaSignOutAlt, FaSun, FaMoon, FaExclamationTriangle
 } from 'react-icons/fa';
 
 const navItems = [
@@ -26,6 +26,9 @@ export default function Sidebar() {
   const theme = useSelector(s => s.settings.theme);
   const user = useSelector(s => s.auth.user);
   const navigate = useNavigate();
+
+  // ---- access low stock count ----
+  const lowStockCount = useSelector(s => s.products.lowStockProducts?.length || 0);
 
   const isLight = theme === 'light';
 
@@ -66,6 +69,30 @@ export default function Sidebar() {
           {item.icon}
         </button>
       ))}
+
+      {/* Low Stock Alerts Button with red badge */}
+      {(user?.role === 'shop' || user?.role === 'dealer') && (
+        <button
+          onClick={() => dispatch(setActiveView('low_stock_alerts'))}
+          className={`relative w-10 h-10 flex items-center justify-center rounded-md border text-lg transition-all duration-150 ${
+            activeView === 'low_stock_alerts'
+              ? isLight
+                ? 'bg-red-50 border-red-500 text-red-600'
+                : 'bg-[#2b0d0d] border-[#e74c3c] text-[#e74c3c]'
+              : isLight
+                ? 'border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-300'
+                : 'border-[#111] text-[#aaa] hover:text-[#e74c3c] hover:border-[#e74c3c]/30'
+          }`}
+          title="Low Stock Alerts"
+        >
+          <FaExclamationTriangle />
+          {lowStockCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-5 h-5 flex items-center justify-center rounded-full border border-red-800 shadow">
+              {lowStockCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {user?.role === 'dealer' && (
         <button

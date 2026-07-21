@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/axios';
 import { useSelector } from 'react-redux';
-import { FaStore, FaExclamationTriangle } from 'react-icons/fa';
+import { FaStore, FaExclamationTriangle, FaLock, FaUnlock, FaPlusCircle } from 'react-icons/fa';
 
 export default function DealerDashboard() {
   const [data, setData] = useState({ shops: [], alerts: [], inventory: [] });
@@ -21,6 +21,11 @@ export default function DealerDashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  const handleAddProduct = (shopId) => {
+    // Placeholder: implement your add product modal or navigation here
+    console.log('Add product to shop:', shopId);
+  };
+
   return (
     <div className="p-4 md:p-6 h-full overflow-y-auto bg-[#0a0a0a] text-white font-mono">
       <h2 className="text-[#2ecc71] text-xl md:text-2xl font-bold mb-2">Dealer Dashboard</h2>
@@ -37,18 +42,34 @@ export default function DealerDashboard() {
               <span className="font-bold text-sm text-[#ccc] truncate">
                 {shop.name || shop.phone}
               </span>
-              <span className="text-[10px] text-[#555] ml-auto">
+              <span className="text-[10px] text-[#555] ml-auto flex items-center gap-1">
+                {shop.hasPassword ? (
+                  <FaLock className="text-[#2ecc71]" title="Phone lock set" />
+                ) : (
+                  <FaUnlock className="text-[#e74c3c]" title="No phone lock" />
+                )}
+                {shop.hasPassword ? 'Secured' : 'Unsecured'}
+              </span>
+              <span className="text-[10px] text-[#555] ml-1">
                 {shop.location?.coordinates?.join(', ') || 'No location'}
               </span>
             </div>
 
             {shop.products.length === 0 ? (
-              <p className="text-xs text-[#555] italic">No products stocked</p>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-xs text-[#555] italic">No products stocked</p>
+                <button
+                  onClick={() => handleAddProduct(shop._id)}
+                  className="flex items-center gap-1 text-xs bg-[#0d4f2b] text-[#2ecc71] px-3 py-1 rounded border border-[#2ecc71] hover:bg-[#2ecc71] hover:text-black transition"
+                >
+                  <FaPlusCircle />
+                  Add Product
+                </button>
+              </div>
             ) : (
               <div className="space-y-3 flex-1">
                 {shop.products.map(item => (
                   <div key={item.productId} className="flex items-center gap-3 bg-[#0a0a0a] p-2 rounded-lg border border-[#1a1a1a]">
-                    {/* Product Image */}
                     {item.imageUrl ? (
                       <img
                         src={item.imageUrl}
@@ -77,6 +98,13 @@ export default function DealerDashboard() {
                     </div>
                   </div>
                 ))}
+                <button
+                  onClick={() => handleAddProduct(shop._id)}
+                  className="flex items-center gap-1 text-xs text-[#2ecc71] hover:underline mt-2"
+                >
+                  <FaPlusCircle />
+                  Add another product
+                </button>
               </div>
             )}
           </div>
@@ -102,7 +130,7 @@ export default function DealerDashboard() {
         </div>
       </div>
 
-      {/* Global Inventory Table (optional) */}
+      {/* Global Inventory Table */}
       <div className="bg-[#0a0a0a] border border-[#111] rounded-xl p-4">
         <h3 className="text-[#2ecc71] text-lg font-bold mb-3">All Inventory Levels</h3>
         <div className="overflow-x-auto">

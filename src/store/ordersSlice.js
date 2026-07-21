@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { db } from '../utils/database';
 import { updateProductStock, setLowStockProducts } from './productsSlice';
-import api from '../api/axios';   // <-- ensure this import is present
+import api from '../api/axios';
 
 export const loadOrders = createAsyncThunk('orders/load', async () => {
   const orders = await db.orders.toArray();
@@ -11,58 +11,96 @@ export const loadOrders = createAsyncThunk('orders/load', async () => {
   return orders;
 });
 
-export const placeOrder = createAsyncThunk('orders/place', async (order, { dispatch }) => {
-  await db.transaction('rw', db.products, db.orders, db.orderItems, async () => {
-    await db.orders.add({ 
-      id: order.id, 
-      timestamp: order.timestamp, 
-      total: order.total 
-    });
-    
-    for (const item of order.items) {
-      await db.orderItems.add({ 
-        orderId: order.id, 
-        productId: item.productId, 
-        name: item.name, 
-        quantity: item.quantity, 
-        price: item.price 
+export const placeOrder = createAsyncThunk(
+  'orders/place',
+  async (order, { dispatch }) => {
+    console.log('📦 [placeOrder] Received order with items:', order.items.length);
+    console.log('📦 [placeOrder] Items:', order.items.map(i => `${i.name} (ID: ${i.productId})`));
+
+    // 1. Save order header + all items in one transaction (all-or-nothing)
+    await db.transaction('rw', db.orders, db.orderItems, async () => {
+      await db.orders.add({
+        id: order.id,
+        timestamp: order.timestamp,
+        total: order.total
       });
-      
-      const product = await db.products.get(item.productId);
-      if (product && product.stock !== undefined) {
-        const newStock = Math.max(0, product.stock - item.quantity);
-        if (newStock <= 0) {
-          alert(`⚠️ హెచ్చరిక: ${product.name} స్టాక్ అయిపోయింది!`);
+
+      for (const item of order.items) {
+        const qty = Number(item.quantity) || 0;
+        if (qty <= 0) {
+          console.warn(`⚠️ [placeOrder] Invalid quantity for ${item.name} – skipping item`);
+          continue;
         }
-        await db.products.update(item.productId, { stock: newStock });
+        await db.orderItems.add({
+          orderId: order.id,
+          productId: Number(item.productId) || String(item.productId),
+          name: item.name,
+          quantity: qty,
+          price: Number(item.price) || 0
+        });
+      }
+    });
 
-        // Update Redux immediately
-        dispatch(updateProductStock({ productId: item.productId, stock: newStock }));
+    // 2. Update stock for each product (independent, no transaction needed)
+    for (const item of order.items) {
+      try {
+        const qty = Number(item.quantity) || 0;
+        if (qty <= 0) continue;
 
-        // ---- Send stock update to backend using the product's barcode ----
-        if (navigator.onLine && product.barcode) {
+        // Look up product – try numeric then string
+        let product = null;
+        const numericId = Number(item.productId);
+        if (!isNaN(numericId)) {
+          product = await db.products.get(numericId);
+        }
+        if (!product) {
+          product = await db.products.get(String(item.productId));
+        }
+
+        if (!product) {
+          console.warn(`⚠️ [placeOrder] Product not found: ${item.name} (ID: ${item.productId}) – stock update skipped`);
+          continue;
+        }
+
+        console.log(`✅ [placeOrder] Found ${product.name} (ID: ${product.id}) with stock ${product.stock}`);
+
+        const currentStock = Number(product.stock) || 0;
+        const newStock = Math.max(0, currentStock - qty);
+        console.log(`📉 [placeOrder] ${product.name}: ${currentStock} → ${newStock}`);
+
+        // Update local stock
+        await db.products.update(product.id, { stock: newStock });
+
+        // Update Redux state
+        dispatch(updateProductStock({ productId: product.id, stock: newStock }));
+
+        // Sync to server (non‑critical)
+        if (navigator.onLine) {
           try {
-            await api.post('/inventory/update-by-barcode', {
-              barcode: product.barcode,
-              stock: newStock
-            });
-            console.log(`📤 Server stock updated: ${product.name} → ${newStock}`);
-          } catch (err) {
-            console.error('❌ Server stock update failed:', err);
+            const payload = product.barcode
+              ? { barcode: product.barcode, stock: newStock }
+              : { productId: String(product.id), stock: newStock };
+            await api.post('/inventory/update-by-barcode', payload);
+            console.log(`📤 [placeOrder] Server stock updated for ${product.name}`);
+          } catch (apiErr) {
+            console.error(`❌ [placeOrder] Server sync failed for ${product.name}:`, apiErr);
           }
         }
+      } catch (err) {
+        console.error(`❌ [placeOrder] Error updating stock for "${item.name}":`, err);
+        // Continue with next product – order is already saved
       }
     }
-  });
 
-  // Recalculate low stock for all products (optional, already done in updateProductStock)
-  const allProducts = await db.products.toArray();
-  const lowThreshold = 5;
-  const lowItems = allProducts.filter(p => p.stock !== undefined && p.stock <= lowThreshold);
-  dispatch(setLowStockProducts(lowItems));
+    // 3. Recompute low‑stock list
+    const allProducts = await db.products.toArray();
+    const lowItems = allProducts.filter(p => p.stock !== undefined && p.stock <= 5);
+    dispatch(setLowStockProducts(lowItems));
 
-  return order;
-});
+    console.log(`✅ [placeOrder] Order ${order.id} placed successfully.`);
+    return order;
+  }
+);
 
 export const getOrdersByDateRange = async (startDate, endDate) => {
   const start = new Date(startDate).getTime();
